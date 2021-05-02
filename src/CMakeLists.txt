@@ -35,8 +35,8 @@ if (POLICY CMP0057)
 endif()
 
 ###############  PROFILING  #################
-#set(PROFILER "/usr/lib//usr/lib/libprofiler.so.0.4.5")
-#set(PROFILER "/usr/lib/libtcmalloc.so.4")
+#set(PROFILER "/usr/lib/x86_64-linux-gnu/libprofiler.so.0")
+#set(PROFILER "/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4")
 
 if(CMAKE_VERSION VERSION_LESS 3.3)
   # IWYU wasn't supported internally in 3.2
@@ -98,6 +98,19 @@ set(OPENSHOT_SOURCES
   Settings.cpp
   TimelineBase.cpp
   Timeline.cpp)
+
+# OpenCV related classes
+set(OPENSHOT_CV_SOURCES
+  CVTracker.cpp
+  CVStabilization.cpp
+  ClipProcessingJobs.cpp
+  CVObjectDetection.cpp
+  effects/Stabilizer.cpp
+  effects/Tracker.cpp
+  effects/ObjectDetection.cpp
+  ./sort_filter/sort.cpp
+  ./sort_filter/Hungarian.cpp
+  ./sort_filter/KalmanTracker.cpp)
 
 # Video effects
 set(EFFECTS_SOURCES
@@ -171,7 +184,7 @@ target_link_libraries(openshot PUBLIC OpenShot::Audio)
 ###
 
 # Find the ImageMagick++ library
-find_package(ImageMagick COMPONENTS Magick++ MagickWand MagickCore)
+find_package(ImageMagick COMPONENTS Magick++ MagickCore)
 
 if(ImageMagick_FOUND)
   if(NOT TARGET ImageMagick::Magick++ AND NOT TARGET Magick++_TARGET)
@@ -212,7 +225,6 @@ if(ImageMagick_FOUND)
 
   # define a preprocessor macro (used in the C++ source)
   target_compile_definitions(openshot PUBLIC USE_IMAGEMAGICK=1)
-  list(APPEND CMAKE_SWIG_FLAGS -DUSE_IMAGEMAGICK=1)
 
   # Link with ImageMagick library
   target_link_libraries(openshot PUBLIC ImageMagick::Magick++)
@@ -234,10 +246,12 @@ endif ()
 if (NOT jsoncpp_FOUND AND NOT DISABLE_BUNDLED_JSONCPP)
   message(STATUS "Using embedded jsoncpp (not found or USE_SYSTEM_JSONCPP disabled)")
   if (NOT TARGET jsoncpp_lib)
-    add_library(jsoncpp_lib INTERFACE)
-    target_include_directories(jsoncpp_lib INTERFACE
+    add_library(jsoncpp_lib OBJECT)
+    set_target_properties(jsoncpp_lib PROPERTIES
+      POSITION_INDEPENDENT_CODE TRUE)
+    target_include_directories(jsoncpp_lib PUBLIC
       "${PROJECT_SOURCE_DIR}/thirdparty/jsoncpp")
-    target_sources(jsoncpp_lib INTERFACE "${PROJECT_SOURCE_DIR}/thirdparty/jsoncpp/jsoncpp.cpp")
+    target_sources(jsoncpp_lib PRIVATE "${PROJECT_SOURCE_DIR}/thirdparty/jsoncpp/jsoncpp.cpp")
     # Because this satisfies the requirement, an installed JsonCpp is optional
     set_package_properties(jsoncpp PROPERTIES TYPE OPTIONAL)
   endif ()
@@ -272,9 +286,14 @@ mark_as_advanced(QT_VERSION_STR)
 
 ################### FFMPEG #####################
 # Find FFmpeg libraries (used for video encoding / decoding)
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avdevice avformat avutil swscale)
+find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale)
 
-set(all_comps avcodec avdevice avformat avfilter avutil postproc swscale swresample avresample)
+set(all_comps avcodec avformat avutil swscale)
+if(TARGET FFmpeg::swresample)
+  list(APPEND all_comps swresample)
+else()
+  list(APPEND all_comps avresample)
+endif()
 set(version_comps avcodec avformat avutil)
 
 foreach(ff_comp IN LISTS all_comps)
@@ -346,8 +365,7 @@ if (TARGET Resvg::Resvg)
   #include_directories(${Resvg_INCLUDE_DIRS})
   target_link_libraries(openshot PUBLIC Resvg::Resvg)
 
-  target_compile_definitions(openshot PUBLIC -DUSE_RESVG=1)
-  list(APPEND CMAKE_SWIG_FLAGS -DUSE_RESVG=1)
+  target_compile_definitions(openshot PUBLIC USE_RESVG=1)
 
   set(HAVE_RESVG TRUE CACHE BOOL "Building with Resvg support" FORCE)
   mark_as_advanced(HAVE_RESVG)
@@ -373,10 +391,53 @@ if (ENABLE_BLACKMAGIC)
     target_link_libraries(openshot PUBLIC ${BLACKMAGIC_LIBRARY_DIR})
 
     # define a preprocessor macro (used in the C++)
-    target_compile_definitions(openshot PUBLIC -DUSE_BLACKMAGIC=1)
-    list(APPEND CMAKE_SWIG_FLAGS -DUSE_BLACKMAGIC=1)
+    target_compile_definitions(openshot PUBLIC USE_BLACKMAGIC=1)
   endif()
 endif()
+
+################## OPENCV ###################
+if(ENABLE_OPENCV)
+  find_package(OpenCV 4)
+  if(NOT OpenCV_FOUND)
+    set(ENABLE_OPENCV FALSE CACHE BOOL
+      "Build with OpenCV algorithms (requires Protobuf 3)" FORCE)
+    # If we have version 4.5.1, all hope is lost
+  elseif(OpenCV_VERSION VERSION_EQUAL 4.5.1)
+    message(WARNING [[Incompatible OpenCV version detected
+OpenCV version 4.5.1 contains header errors which make it unable to be used with OpenShot. OpenCV support wil be disabled. Upgrade to OpenCV 4.5.2+ or downgrade to 4.5.0 or earlier, to enable OpenCV.
+See https://github.com/opencv/opencv/issues/19260]])
+    set(ENABLE_OPENCV FALSE CACHE BOOL
+      "Build with OpenCV algorithms (requires Protobuf 3)" FORCE)
+  else()
+    add_subdirectory(protobuf_messages)
+    # Add OpenCV source files
+    target_sources(openshot PRIVATE
+      ${OPENSHOT_CV_SOURCES}
+    )
+    target_compile_definitions(openshot PUBLIC USE_OPENCV=1)
+    target_link_libraries(openshot PUBLIC
+      opencv_core
+      opencv_video
+      opencv_highgui
+      opencv_dnn
+      opencv_tracking
+      openshot_protobuf
+    )
+    set(HAVE_OPENCV TRUE CACHE BOOL "Building with OpenCV effects" FORCE)
+    mark_as_advanced(HAVE_OPENCV)
+
+    # Keep track of OpenCV version, to embed in our version header
+    set(OPENCV_VERSION_STR "${OpenCV_VERSION}" CACHE STRING "OpenCV version linked with" FORCE)
+    mark_as_advanced(OPENCV_VERSION_STR)
+
+    # We may need to use Tracker as opencv::legacy::Tracker
+    if(OpenCV_VERSION VERSION_GREATER_EQUAL 4.5.2)
+      target_compile_definitions(openshot PUBLIC USE_LEGACY_TRACKER=1)
+    endif()
+
+  endif()
+endif()  # ENABLE_OPENCV
+add_feature_info("OpenCV algorithms" ENABLE_OPENCV "Use OpenCV algorithms")
 
 ###############  LINK LIBRARY  #################
 # Link remaining dependency libraries
@@ -395,16 +456,46 @@ endif()
 
 # Install primary library
 install(TARGETS openshot
+  COMPONENT runtime
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libopenshot)
 
-install(
-  DIRECTORY .
+install(DIRECTORY .
+  COMPONENT devel
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libopenshot
   FILES_MATCHING PATTERN "*.h"
 )
+
+# On Windows, we copy project output DLLs into the tests dir
+# so that the unit test executables can find them
+if(CMAKE_VERSION VERSION_GREATER 3.13 AND WIN32)
+  # Copy the DLLs immediately after they're built
+  add_custom_command(TARGET openshot POST_BUILD
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:openshot>"
+      "${PROJECT_BINARY_DIR}/tests/"
+    BYPRODUCTS
+      "${PROJECT_BINARY_DIR}/tests/libopenshot.dll"
+    COMMENT
+      "Copying libopenshot DLL to unit test directory"
+  )
+  # Also copy libopenshot-audio DLL
+  get_target_property(AUDIO_LIB_PATH OpenShot::Audio LOCATION)
+  add_custom_target(test-install-audio-dll ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${AUDIO_LIB_PATH}"
+      "${PROJECT_BINARY_DIR}/tests/"
+    BYPRODUCTS
+      "${PROJECT_BINARY_DIR}/tests/libopenshot-audio.dll"
+    COMMENT
+      "Copying OpenShotAudio library DLL to unit test directory"
+  )
+  add_dependencies(test-install-audio-dll OpenShot::Audio)
+endif()
+
 
 ############### CPACK PACKAGING ##############
 if(MINGW)
@@ -413,9 +504,6 @@ endif()
 if(UNIX AND NOT APPLE)
   set(CPACK_GENERATOR "DEB")
 endif()
-#if(UNIX AND APPLE)
-#  set(CPACK_GENERATOR "DragNDrop")
-#endif()
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Jonathan Thomas") #required
 
 include(CPack)
