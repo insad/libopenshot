@@ -5,24 +5,8 @@
 # @section LICENSE
 #
 # Copyright (c) 2008-2019 OpenShot Studios, LLC
-# <http://www.openshotstudios.com/>. This file is part of
-# OpenShot Library (libopenshot), an open-source project dedicated to
-# delivering high quality video editing and animation solutions to the
-# world. For more information visit <http://www.openshot.org/>.
 #
-# OpenShot Library (libopenshot) is free software: you can redistribute it
-# and/or modify it under the terms of the GNU Lesser General Public License
-# as published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
-#
-# OpenShot Library (libopenshot) is distributed in the hope that it will be
-# useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
-################################################################################
+# SPDX-License-Identifier: LGPL-3.0-or-later
 
 # Collect and display summary of options/dependencies
 include(FeatureSummary)
@@ -61,6 +45,7 @@ add_feature_info("IWYU (include-what-you-use)" ENABLE_IWYU "Scan all source file
 # Main library sources
 set(OPENSHOT_SOURCES
   AudioBufferSource.cpp
+  AudioDevices.cpp
   AudioReaderSource.cpp
   AudioResampler.cpp
   CacheBase.cpp
@@ -87,7 +72,6 @@ set(OPENSHOT_SOURCES
   Json.cpp
   KeyFrame.cpp
   OpenShotVersion.cpp
-  ZmqLogger.cpp
   PlayerBase.cpp
   Point.cpp
   Profiles.cpp
@@ -97,7 +81,10 @@ set(OPENSHOT_SOURCES
   QtTextReader.cpp
   Settings.cpp
   TimelineBase.cpp
-  Timeline.cpp)
+  Timeline.cpp
+  TrackedObjectBase.cpp
+  ZmqLogger.cpp
+  )
 
 # OpenCV related classes
 set(OPENSHOT_CV_SOURCES
@@ -105,6 +92,7 @@ set(OPENSHOT_CV_SOURCES
   CVStabilization.cpp
   ClipProcessingJobs.cpp
   CVObjectDetection.cpp
+  TrackedObjectBBox.cpp
   effects/Stabilizer.cpp
   effects/Tracker.cpp
   effects/ObjectDetection.cpp
@@ -128,7 +116,17 @@ set(EFFECTS_SOURCES
   effects/Pixelate.cpp
   effects/Saturation.cpp
   effects/Shift.cpp
-  effects/Wave.cpp)
+  effects/Wave.cpp
+  audio_effects/STFT.cpp
+  audio_effects/Noise.cpp
+  audio_effects/Delay.cpp
+  audio_effects/Echo.cpp
+  audio_effects/Distortion.cpp
+  audio_effects/ParametricEQ.cpp
+  audio_effects/Compressor.cpp
+  audio_effects/Expander.cpp
+  audio_effects/Robotization.cpp
+  audio_effects/Whisperization.cpp)
 
 # Qt video player components
 set(QT_PLAYER_SOURCES
@@ -184,55 +182,58 @@ target_link_libraries(openshot PUBLIC OpenShot::Audio)
 ###
 
 # Find the ImageMagick++ library
-find_package(ImageMagick COMPONENTS Magick++ MagickCore)
+if (ENABLE_MAGICK)
+  find_package(ImageMagick COMPONENTS Magick++ MagickCore)
 
-if(ImageMagick_FOUND)
-  if(NOT TARGET ImageMagick::Magick++ AND NOT TARGET Magick++_TARGET)
-    add_library(Magick++_TARGET INTERFACE)
+  if(ImageMagick_FOUND)
+    if(NOT TARGET ImageMagick::Magick++ AND NOT TARGET Magick++_TARGET)
+      add_library(Magick++_TARGET INTERFACE)
 
-    # Include ImageMagick++ headers (needed for compile)
-    set_property(TARGET Magick++_TARGET APPEND PROPERTY
-      INTERFACE_INCLUDE_DIRECTORIES ${ImageMagick_INCLUDE_DIRS})
+      # Include ImageMagick++ headers (needed for compile)
+      set_property(TARGET Magick++_TARGET APPEND PROPERTY
+        INTERFACE_INCLUDE_DIRECTORIES ${ImageMagick_INCLUDE_DIRS})
 
-    # Set the Quantum Depth that ImageMagick was built with (default to 16 bits)
-    if(NOT DEFINED MAGICKCORE_QUANTUM_DEPTH)
-      set(MAGICKCORE_QUANTUM_DEPTH 16)
+      # Set the Quantum Depth that ImageMagick was built with (default to 16 bits)
+      if(NOT DEFINED MAGICKCORE_QUANTUM_DEPTH)
+        set(MAGICKCORE_QUANTUM_DEPTH 16)
+      endif()
+      if(NOT DEFINED MAGICKCORE_HDRI_ENABLE)
+        set(MAGICKCORE_HDRI_ENABLE 0)
+      endif()
+
+      set_property(TARGET Magick++_TARGET APPEND PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS
+          MAGICKCORE_QUANTUM_DEPTH=${MAGICKCORE_QUANTUM_DEPTH})
+      set_property(TARGET Magick++_TARGET APPEND PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS
+          MAGICKCORE_HDRI_ENABLE=${MAGICKCORE_HDRI_ENABLE})
+
+      target_link_libraries(Magick++_TARGET INTERFACE
+        ${ImageMagick_LIBRARIES})
+
+      # Alias to our namespaced name
+      add_library(ImageMagick::Magick++ ALIAS Magick++_TARGET)
+
     endif()
-    if(NOT DEFINED MAGICKCORE_HDRI_ENABLE)
-      set(MAGICKCORE_HDRI_ENABLE 0)
-    endif()
 
-    set_property(TARGET Magick++_TARGET APPEND PROPERTY
-      INTERFACE_COMPILE_DEFINITIONS
-        MAGICKCORE_QUANTUM_DEPTH=${MAGICKCORE_QUANTUM_DEPTH})
-    set_property(TARGET Magick++_TARGET APPEND PROPERTY
-      INTERFACE_COMPILE_DEFINITIONS
-        MAGICKCORE_HDRI_ENABLE=${MAGICKCORE_HDRI_ENABLE})
+    # Add optional ImageMagic-dependent sources
+    target_sources(openshot PRIVATE
+      MagickUtilities.cpp
+      ImageReader.cpp
+      ImageWriter.cpp
+      TextReader.cpp
+    )
 
-    target_link_libraries(Magick++_TARGET INTERFACE
-      ${ImageMagick_LIBRARIES})
+    # define a preprocessor macro (used in the C++ source)
+    target_compile_definitions(openshot PUBLIC USE_IMAGEMAGICK=1)
 
-    # Alias to our namespaced name
-    add_library(ImageMagick::Magick++ ALIAS Magick++_TARGET)
+    # Link with ImageMagick library
+    target_link_libraries(openshot PUBLIC ImageMagick::Magick++)
 
+    set(HAVE_IMAGEMAGICK TRUE CACHE BOOL "Building with ImageMagick support" FORCE)
+    mark_as_advanced(HAVE_IMAGEMAGICK)
   endif()
-
-  # Add optional ImageMagic-dependent sources
-  target_sources(openshot PRIVATE
-    ImageReader.cpp
-    ImageWriter.cpp
-    TextReader.cpp)
-
-  # define a preprocessor macro (used in the C++ source)
-  target_compile_definitions(openshot PUBLIC USE_IMAGEMAGICK=1)
-
-  # Link with ImageMagick library
-  target_link_libraries(openshot PUBLIC ImageMagick::Magick++)
-
-  set(HAVE_IMAGEMAGICK TRUE CACHE BOOL "Building with ImageMagick support" FORCE)
-  mark_as_advanced(HAVE_IMAGEMAGICK)
 endif()
-
 
 ################### JSONCPP #####################
 # Include jsoncpp headers (needed for JSON parsing)
@@ -269,9 +270,46 @@ if (TARGET jsoncpp_lib)
   target_link_libraries(openshot PUBLIC jsoncpp_lib)
 endif ()
 
-################# QT5 ###################
-# Find QT5 libraries
+
+###
+### Resvg, the Rust SVG library
+###
+
+# Migrate some legacy variable names
+if(DEFINED RESVGDIR AND NOT DEFINED Resvg_ROOT)
+  set(Resvg_ROOT ${RESVGDIR})
+endif()
+if(DEFINED ENV{RESVGDIR} AND NOT DEFINED Resvg_ROOT)
+  set(Resvg_ROOT $ENV{RESVGDIR})
+endif()
+
+# Find resvg library (used for rendering svg files)
+find_package(Resvg)
+
+# Include resvg headers (optional SVG library)
+if (TARGET Resvg::Resvg)
+  #include_directories(${Resvg_INCLUDE_DIRS})
+  target_link_libraries(openshot PUBLIC Resvg::Resvg)
+
+  target_compile_definitions(openshot PUBLIC USE_RESVG=1)
+
+  set(HAVE_RESVG TRUE CACHE BOOL "Building with Resvg support" FORCE)
+  mark_as_advanced(HAVE_RESVG)
+else()
+  set(HAVE_RESVG FALSE CACHE BOOL "Building with Resvg support" FORCE)
+endif()
+
+###
+### Qt Toolkit
+###
+
 set(_qt_components Core Gui Widgets)
+
+# We also need QtSvg unless we have Resvg insetead.
+if(NOT HAVE_RESVG)
+  list(APPEND _qt_components Svg)
+endif()
+
 find_package(Qt5 COMPONENTS ${_qt_components} REQUIRED)
 
 foreach(_qt_comp IN LISTS _qt_components)
@@ -286,28 +324,70 @@ mark_as_advanced(QT_VERSION_STR)
 
 ################### FFMPEG #####################
 # Find FFmpeg libraries (used for video encoding / decoding)
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale)
+find_package(FFmpeg REQUIRED
+  COMPONENTS avcodec avformat avutil swscale
+  OPTIONAL_COMPONENTS swresample avresample
+)
 
 set(all_comps avcodec avformat avutil swscale)
-if(TARGET FFmpeg::swresample)
-  list(APPEND all_comps swresample)
-else()
-  list(APPEND all_comps avresample)
-endif()
 set(version_comps avcodec avformat avutil)
+
+# Pick a resampler.  Prefer swresample if possible
+if(TARGET FFmpeg::swresample AND ${FFmpeg_avformat_VERSION} VERSION_GREATER "57.0.0")
+  set(resample_lib swresample)
+  set(USE_SW TRUE)
+else()
+  set(resample_lib avresample)
+  set(USE_SW FALSE)
+endif()
+list(APPEND all_comps ${resample_lib})
 
 foreach(ff_comp IN LISTS all_comps)
   if(TARGET FFmpeg::${ff_comp})
     target_link_libraries(openshot PUBLIC FFmpeg::${ff_comp})
     # Keep track of some FFmpeg lib versions, to embed in our version header
-    if(${ff_comp} IN_LIST version_comps)
+    if(${ff_comp} IN_LIST version_comps AND FFmpeg_${ff_comp}_VERSION)
       string(TOUPPER ${ff_comp} v_name)
-      set(${v_name}_VERSION_STR ${${ff_comp}_VERSION} CACHE STRING "${ff_comp} version used" FORCE)
+      set(${v_name}_VERSION_STR ${FFmpeg_${ff_comp}_VERSION} CACHE STRING "${ff_comp} version used" FORCE)
       mark_as_advanced(${v_name}_VERSION_STR)
     endif()
   endif()
-
 endforeach()
+
+# Indicate which resampler we linked with, and set a config header flag
+add_feature_info("FFmpeg ${resample_lib}" TRUE "Audio resampling uses ${resample_lib}")
+# Set the appropriate flag in OpenShotVersion.h
+set(FFMPEG_USE_SWRESAMPLE ${USE_SW} CACHE BOOL "libswresample used for audio resampling" FORCE)
+mark_as_advanced(FFMPEG_USE_SWRESAMPLE)
+
+# Version check for hardware-acceleration code
+if(USE_HW_ACCEL AND FFmpeg_avcodec_VERSION)
+  if(${FFmpeg_avcodec_VERSION} VERSION_GREATER "57.106")
+    set(HAVE_HW_ACCEL TRUE)
+  endif()
+endif()
+
+# Hwaccel preprocessor define (for source #ifdefs)
+if (NOT USE_HW_ACCEL)
+  target_compile_definitions(openshot PUBLIC USE_HW_ACCEL=0)
+elseif (HAVE_HW_ACCEL)
+  target_compile_definitions(openshot PUBLIC USE_HW_ACCEL=1)
+endif()
+
+# Include in feature summary
+if(USE_HW_ACCEL AND HAVE_HW_ACCEL)
+  set(FFMPEG_HARDWARE_ACCELERATION TRUE)
+elseif(USE_HW_ACCEL)
+  set(FFMPEG_HARDWARE_ACCELERATION "NOTFOUND")
+else()
+  set(FFMPEG_HARDWARE_ACCELERATION FALSE)
+endif()
+
+# Report HWAccel status, unless it's indeterminate
+if (NOT FFMPEG_HARDWARE_ACCELERATION STREQUAL "NOTFOUND")
+  set(_hwaccel_help "GPU-accelerated routines (FFmpeg 3.4+)")
+  add_feature_info("FFmpeg hwaccel" FFMPEG_HARDWARE_ACCELERATION ${_hwaccel_help})
+endif()
 
 ################### OPENMP #####################
 # Check for OpenMP (used for multi-core processing)
@@ -346,54 +426,21 @@ if (TARGET cppzmq)
 endif()
 
 ###
-### Resvg, the Rust SVG library
+### Babl
 ###
 
-# Migrate some legacy variable names
-if(DEFINED RESVGDIR AND NOT DEFINED Resvg_ROOT)
-  set(Resvg_ROOT ${RESVGDIR})
-endif()
-if(DEFINED ENV{RESVGDIR} AND NOT DEFINED Resvg_ROOT)
-  set(Resvg_ROOT $ENV{RESVGDIR})
-endif()
+# Find babl library for colourspace conversion (used for advanced chroma keying
+find_package(babl)
 
-# Find resvg library (used for rendering svg files)
-find_package(Resvg)
-
-# Include resvg headers (optional SVG library)
-if (TARGET Resvg::Resvg)
-  #include_directories(${Resvg_INCLUDE_DIRS})
-  target_link_libraries(openshot PUBLIC Resvg::Resvg)
-
-  target_compile_definitions(openshot PUBLIC USE_RESVG=1)
-
-  set(HAVE_RESVG TRUE CACHE BOOL "Building with Resvg support" FORCE)
-  mark_as_advanced(HAVE_RESVG)
+if (babl_FOUND)
+  set(HAVE_BABL TRUE CACHE BOOL "Building with babl support" FORCE)
+  mark_as_advanced(HAVE_BABL)
 endif()
 
-################# BLACKMAGIC DECKLINK ###################
-# Find BlackMagic DeckLinkAPI libraries
-if (ENABLE_BLACKMAGIC)
-  find_package(BlackMagic)
-
-  if (BLACKMAGIC_FOUND)
-    # BlackMagic related files
-    target_sources(openshot PRIVATE
-      DecklinkInput.cpp
-      DecklinkReader.cpp
-      DecklinkOutput.cpp
-      DecklinkWriter.cpp)
-
-    # Include Blackmagic headers (needed for compile)
-    target_include_directories(openshot PRIVATE ${BLACKMAGIC_INCLUDE_DIR})
-
-    # Link libopenshot with BlackMagic libs
-    target_link_libraries(openshot PUBLIC ${BLACKMAGIC_LIBRARY_DIR})
-
-    # define a preprocessor macro (used in the C++)
-    target_compile_definitions(openshot PUBLIC USE_BLACKMAGIC=1)
-  endif()
-endif()
+if (TARGET babl_lib)
+  target_compile_definitions(openshot PUBLIC USE_BABL=1)
+  target_link_libraries(openshot PUBLIC babl_lib)
+endif ()
 
 ################## OPENCV ###################
 if(ENABLE_OPENCV)
@@ -401,15 +448,43 @@ if(ENABLE_OPENCV)
   if(NOT OpenCV_FOUND)
     set(ENABLE_OPENCV FALSE CACHE BOOL
       "Build with OpenCV algorithms (requires Protobuf 3)" FORCE)
-    # If we have version 4.5.1, all hope is lost
-  elseif(OpenCV_VERSION VERSION_EQUAL 4.5.1)
+  # If we have version 4.5.1, all hope is lost
+  elseif(OpenCV_VERSION VERSION_EQUAL "4.5.1")
     message(WARNING [[Incompatible OpenCV version detected
 OpenCV version 4.5.1 contains header errors which make it unable to be used with OpenShot. OpenCV support wil be disabled. Upgrade to OpenCV 4.5.2+ or downgrade to 4.5.0 or earlier, to enable OpenCV.
 See https://github.com/opencv/opencv/issues/19260]])
     set(ENABLE_OPENCV FALSE CACHE BOOL
       "Build with OpenCV algorithms (requires Protobuf 3)" FORCE)
   else()
-    add_subdirectory(protobuf_messages)
+    ###
+    ### Protocol Buffers
+    ###
+    find_package(Protobuf 3 REQUIRED)
+
+    # Create a target for libprotobuf, if necessary (CMake < 3.9)
+    if(NOT TARGET protobuf::libprotobuf)
+      add_library(protobuf_TARGET INTERFACE)
+      target_include_directories(protobuf_TARGET
+        INTERFACE ${Protobuf_INCLUDE_DIRS})
+      target_link_libraries(protobuf_TARGET INTERFACE ${Protobuf_LIBRARIES})
+      add_library(protobuf::libprotobuf ALIAS protobuf_TARGET)
+    endif()
+
+    # Create libopenshot_protobuf
+    set(PROTOBUF_SOURCES
+      "objdetectdata.proto"
+      "stabilizedata.proto"
+      "trackerdata.proto"
+    )
+    PROTOBUF_GENERATE_CPP(ProtoSources ProtoHeaders ${PROTOBUF_SOURCES})
+
+    target_sources(openshot PRIVATE ${ProtoSources} ${ProtoHeaders})
+    target_link_libraries(openshot PRIVATE protobuf::libprotobuf)
+
+    ###
+    ### OpenCV
+    ###
+
     # Add OpenCV source files
     target_sources(openshot PRIVATE
       ${OPENSHOT_CV_SOURCES}
@@ -421,7 +496,6 @@ See https://github.com/opencv/opencv/issues/19260]])
       opencv_highgui
       opencv_dnn
       opencv_tracking
-      openshot_protobuf
     )
     set(HAVE_OPENCV TRUE CACHE BOOL "Building with OpenCV effects" FORCE)
     mark_as_advanced(HAVE_OPENCV)
@@ -431,7 +505,7 @@ See https://github.com/opencv/opencv/issues/19260]])
     mark_as_advanced(OPENCV_VERSION_STR)
 
     # We may need to use Tracker as opencv::legacy::Tracker
-    if(OpenCV_VERSION VERSION_GREATER_EQUAL 4.5.2)
+    if(OpenCV_VERSION VERSION_GREATER "4.5.1")
       target_compile_definitions(openshot PUBLIC USE_LEGACY_TRACKER=1)
     endif()
 
@@ -454,7 +528,7 @@ endif()
 ### INSTALL HEADERS & LIBRARY
 ###
 
-# Install primary library
+# Install libraries
 install(TARGETS openshot
   COMPONENT runtime
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -468,9 +542,10 @@ install(DIRECTORY .
   FILES_MATCHING PATTERN "*.h"
 )
 
+
 # On Windows, we copy project output DLLs into the tests dir
 # so that the unit test executables can find them
-if(CMAKE_VERSION VERSION_GREATER 3.13 AND WIN32)
+if(CMAKE_VERSION VERSION_GREATER 3.13 AND WIN32 AND BUILD_TESTING)
   # Copy the DLLs immediately after they're built
   add_custom_command(TARGET openshot POST_BUILD
     COMMAND
@@ -482,6 +557,7 @@ if(CMAKE_VERSION VERSION_GREATER 3.13 AND WIN32)
     COMMENT
       "Copying libopenshot DLL to unit test directory"
   )
+
   # Also copy libopenshot-audio DLL
   get_target_property(AUDIO_LIB_PATH OpenShot::Audio LOCATION)
   add_custom_target(test-install-audio-dll ALL

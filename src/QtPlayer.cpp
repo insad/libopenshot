@@ -7,37 +7,24 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
+#include "QtPlayer.h"
+
+#include "AudioDevices.h"
 #include "Clip.h"
 #include "FFmpegReader.h"
 #include "Timeline.h"
-#include "QtPlayer.h"
 #include "Qt/PlayerPrivate.h"
 #include "Qt/VideoRenderer.h"
 
 namespace openshot
 {
+
+    using AudioDeviceList = std::vector<std::pair<std::string, std::string>>;
+
     // Delegating constructor
     QtPlayer::QtPlayer()
     : QtPlayer::QtPlayer(new VideoRenderer())
@@ -77,12 +64,9 @@ namespace openshot
     }
 
     /// Get Audio Devices from JUCE
-    std::vector<openshot::AudioDeviceInfo> QtPlayer::GetAudioDeviceNames() {
-    	if (reader && threads_started) {
-    		return p->audioPlayback->getAudioDeviceNames();
-    	} else {
-    		return std::vector<openshot::AudioDeviceInfo>();
-    	}
+    AudioDeviceList QtPlayer::GetAudioDeviceNames() {
+        AudioDevices devs;
+        return devs.getNames();
     }
 
     void QtPlayer::SetSource(const std::string &source)
@@ -119,7 +103,7 @@ namespace openshot
 
     void QtPlayer::Play()
     {
-    	// Set mode to playing, and speed to normal
+        // Set mode to playing, and speed to normal
     	mode = PLAYBACK_PLAY;
     	Speed(1);
 

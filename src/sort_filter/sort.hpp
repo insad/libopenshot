@@ -1,3 +1,6 @@
+// © OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "KalmanTracker.h"
 #include "Hungarian.h"
@@ -39,7 +42,7 @@ public:
 	double GetCentroidsDistance(cv::Rect_<float> bb_test, cv::Rect_<float> bb_gt);
 	std::vector<KalmanTracker> trackers;
 
-	double max_centroid_dist_norm = 0.15;
+	double max_centroid_dist_norm = 0.05;
 
 	std::vector<cv::Rect_<float>> predictedBoxes;
 	std::vector<std::vector<double>> centroid_dist_matrix;

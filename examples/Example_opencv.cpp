@@ -6,37 +6,22 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include "../../include/CVTracker.h"
-#include "../../include/CVStabilization.h"
-#include "../../include/CVObjectDetection.h"
+#include "CVTracker.h"
+#include "CVStabilization.h"
+#include "CVObjectDetection.h"
 
-#include "../../include/OpenShot.h"
-#include "../../include/CrashHandler.h"
+#include "Clip.h"
+#include "EffectBase.h"
+#include "EffectInfo.h"
+#include "Frame.h"
+#include "CrashHandler.h"
 
 using namespace openshot;
 using namespace std;
@@ -60,7 +45,7 @@ void displayClip(openshot::Clip &r9){
 
     // Opencv display window
     cv::namedWindow("Display Image", cv::WINDOW_NORMAL );
-    
+
     // Get video lenght
     int videoLenght = r9.Reader()->info.video_length;
 
@@ -118,7 +103,7 @@ int main(int argc, char* argv[]) {
         CVTracker tracker(trackerJson(r, false), processingController);
 
         // Start the tracking
-        tracker.trackClip(r9, 0, 100, true);
+        tracker.trackClip(r9, 0, 0, true);
         // Save the tracked data
         tracker.SaveTrackedData();
 
@@ -223,22 +208,23 @@ string jsonFormat(string key, string value, string type){
 // Return JSON string for the tracker effect
 string trackerJson(cv::Rect2d r, bool onlyProtoPath){
 
-    // Define path to save tracked data 
+    // Define path to save tracked data
     string protobufDataPath = "kcf_tracker.data";
     // Set the tracker
     string tracker = "KCF";
 
     // Construct all the composition of the JSON string
     string protobuf_data_path = jsonFormat("protobuf_data_path", protobufDataPath);
-    string trackerType = jsonFormat("tracker_type", tracker);
+    string trackerType = jsonFormat("tracker-type", tracker);
     string bboxCoords = jsonFormat(
-                                    "bbox", 
-                                            "{" + jsonFormat("x", to_string(r.x), "int") + 
-                                            "," + jsonFormat("y", to_string(r.y), "int") + 
-                                            "," + jsonFormat("w", to_string(r.width), "int") +
-                                            "," + jsonFormat("h", to_string(r.height), "int") + 
+                                    "region",
+                                            "{" + jsonFormat("x", to_string(r.x), "int") +
+                                            "," + jsonFormat("y", to_string(r.y), "int") +
+                                            "," + jsonFormat("width", to_string(r.width), "int") +
+                                            "," + jsonFormat("height", to_string(r.height), "int") +
+                                            "," + jsonFormat("first-frame", to_string(0), "int") +
                                             "}",
-                                    "rstring");  
+                                    "rstring");
 
     // Return only the the protobuf path in JSON format
     if(onlyProtoPath)
@@ -251,7 +237,7 @@ string trackerJson(cv::Rect2d r, bool onlyProtoPath){
 // Return JSON string for the stabilizer effect
 string stabilizerJson(bool onlyProtoPath){
 
-    // Define path to save stabilized data 
+    // Define path to save stabilized data
     string protobufDataPath = "example_stabilizer.data";
     // Set smoothing window value
     string smoothingWindow = "30";
@@ -270,13 +256,13 @@ string stabilizerJson(bool onlyProtoPath){
 
 string objectDetectionJson(bool onlyProtoPath){
 
-    // Define path to save object detection data 
+    // Define path to save object detection data
     string protobufDataPath = "example_object_detection.data";
     // Define processing device
     string processingDevice = "GPU";
     // Set path to model configuration file
     string modelConfiguration = "yolov3.cfg";
-    // Set path to model weights 
+    // Set path to model weights
     string modelWeights = "yolov3.weights";
     // Set path to class names file
     string classesFile = "obj.names";

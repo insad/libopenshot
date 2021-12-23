@@ -6,30 +6,14 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "AudioReaderSource.h"
 #include "Exceptions.h"
+#include "Frame.h"
+#include "ZmqLogger.h"
 
 using namespace std;
 using namespace openshot;
@@ -40,7 +24,7 @@ AudioReaderSource::AudioReaderSource(ReaderBase *audio_reader, int64_t starting_
 	  size(buffer_size), position(0), frame_position(0), estimated_frame(0), speed(1) {
 
 	// Initialize an audio buffer (based on reader)
-	buffer = new juce::AudioSampleBuffer(reader->info.channels, size);
+	buffer = new juce::AudioBuffer<float>(reader->info.channels, size);
 
 	// initialize the audio samples to zero (silence)
 	buffer->clear();
@@ -49,7 +33,6 @@ AudioReaderSource::AudioReaderSource(ReaderBase *audio_reader, int64_t starting_
 // Destructor
 AudioReaderSource::~AudioReaderSource()
 {
-	// Clear and delete the buffer
 	delete buffer;
 	buffer = NULL;
 }
@@ -73,7 +56,7 @@ void AudioReaderSource::GetMoreSamplesFromReader()
 	estimated_frame = frame_number;
 
 	// Init new buffer
-	juce::AudioSampleBuffer *new_buffer = new juce::AudioSampleBuffer(reader->info.channels, size);
+	auto *new_buffer = new juce::AudioBuffer<float>(reader->info.channels, size);
 	new_buffer->clear();
 
 	// Move the remaining samples into new buffer (if any)
@@ -142,7 +125,7 @@ void AudioReaderSource::GetMoreSamplesFromReader()
 }
 
 // Reverse an audio buffer
-juce::AudioSampleBuffer* AudioReaderSource::reverse_buffer(juce::AudioSampleBuffer* buffer)
+juce::AudioBuffer<float>* AudioReaderSource::reverse_buffer(juce::AudioBuffer<float>* buffer)
 {
 	int number_of_samples = buffer->getNumSamples();
 	int channels = buffer->getNumChannels();
@@ -151,7 +134,7 @@ juce::AudioSampleBuffer* AudioReaderSource::reverse_buffer(juce::AudioSampleBuff
 	ZmqLogger::Instance()->AppendDebugMethod("AudioReaderSource::reverse_buffer", "number_of_samples", number_of_samples, "channels", channels);
 
 	// Reverse array (create new buffer to hold the reversed version)
-	juce::AudioSampleBuffer *reversed = new juce::AudioSampleBuffer(channels, number_of_samples);
+	auto *reversed = new juce::AudioBuffer<float>(channels, number_of_samples);
 	reversed->clear();
 
 	for (int channel = 0; channel < channels; channel++)
@@ -241,7 +224,7 @@ void AudioReaderSource::getNextAudioBlock(const juce::AudioSourceChannelInfo& in
 }
 
 // Prepare to play this audio source
-void AudioReaderSource::prepareToPlay(int, double) { }
+void AudioReaderSource::prepareToPlay(int, double) {}
 
 // Release all resources
 void AudioReaderSource::releaseResources() { }
@@ -286,7 +269,7 @@ void AudioReaderSource::setLooping (bool shouldLoop)
 }
 
 // Update the internal buffer used by this source
-void AudioReaderSource::setBuffer (juce::AudioSampleBuffer *audio_buffer)
+void AudioReaderSource::setBuffer (juce::AudioBuffer<float> *audio_buffer)
 {
 	buffer = audio_buffer;
 	setNextReadPosition(0);

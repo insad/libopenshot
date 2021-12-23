@@ -1,33 +1,15 @@
 /**
  * @file
- * @brief Header for the ClipProcessingJobs class
+ * @brief Header for ClipProcessingJobs class
  * @author Jonathan Thomas <jonathan@openshot.org>
+ * @author Brenno Caldato <brenno.caldato@outlook.com>
  *
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
-
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #ifdef USE_OPENCV
 	#define int64 opencv_broken_int
@@ -35,7 +17,7 @@
 	#include <opencv2/opencv.hpp>
 	#include <opencv2/core.hpp>
 	#undef uint64
-	#undef int64	
+	#undef int64
 
 	#include "CVStabilization.h"
     #include "CVTracker.h"
@@ -46,7 +28,7 @@
 #include "ProcessingController.h"
 #include "Clip.h"
 
-using namespace openshot;
+namespace openshot {
 
 // Constructor responsible to choose processing type and apply to clip
 class ClipProcessingJobs{
@@ -63,7 +45,7 @@ class ClipProcessingJobs{
 		/// Will handle a Thread safely comutication between ClipProcessingJobs and the processing effect classes
 		ProcessingController processingController;
 
-		// Apply object tracking to clip 
+		// Apply object tracking to clip
 		void trackClip(Clip& clip, ProcessingController& controller);
 		// Apply stabilization to clip
 		void stabilizeClip(Clip& clip, ProcessingController& controller);
@@ -74,7 +56,7 @@ class ClipProcessingJobs{
 	public:
 		// Constructor
 		ClipProcessingJobs(std::string processingType, std::string processInfoJson);
-		// Process clip accordingly to processingType	
+		// Process clip accordingly to processingType
 		void processClip(Clip& clip, std::string json);
 
 		// Thread related variables and methods
@@ -83,6 +65,6 @@ class ClipProcessingJobs{
 		void CancelProcessing();
 		bool GetError();
 		std::string GetErrorMessage();
-
-
 };
+
+}  // namespace openshot

@@ -2,123 +2,91 @@
  * @file
  * @brief Header file for Tracker effect class
  * @author Jonathan Thomas <jonathan@openshot.org>
+ * @author Brenno Caldato <brenno.caldato@outlook.com>
  *
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #ifndef OPENSHOT_TRACKER_EFFECT_H
 #define OPENSHOT_TRACKER_EFFECT_H
 
-#include "../EffectBase.h"
-
-#include <cmath>
-#include <fstream>
-#include <stdio.h>
+#include <string>
 #include <memory>
-#include "../Color.h"
-#include "../Json.h"
-#include "../KeyFrame.h"
-#include "protobuf_messages/trackerdata.pb.h"
+#include <map>
 
-// Tracking info struct
-struct EffectFrameData{
-  size_t frame_id = -1;
-  float rotation = 0;
-  float x1 = -1;
-  float y1 = -1;
-  float x2 = -1;
-  float y2 = -1;
+#include "EffectBase.h"
 
-  // Constructors
-  EffectFrameData()
-  {}
+#include "Json.h"
+#include "KeyFrame.h"
 
-  EffectFrameData( int _frame_id)
-  {frame_id = _frame_id;}
-
-  EffectFrameData( int _frame_id , float _rotation, float _x1, float _y1, float _x2, float _y2)
-  {
-      frame_id = _frame_id;
-      rotation = _rotation;
-      x1 = _x1;
-      y1 = _y1;
-      x2 = _x2;
-      y2 = _y2;
-  }
-};
-
+#include "TrackedObjectBBox.h"
 
 namespace openshot
 {
+    // Forwards decls
+    class Frame;
+    class TrackedObjectBBox;
+
     /**
-     * @brief This class track a given object through the clip and, when called, draws a box surrounding it.
+     * @brief This class tracks a given object through the clip, draws a box around it and allow
+     * the user to attach another clip (image or video) to the tracked object.
      *
-     * Tracking is useful to better visualize and follow the movement of an object through video.
+     * Tracking is useful to better visualize, follow the movement of an object through video
+     * and attach an image or video to it.
      */
     class Tracker : public EffectBase
     {
     private:
         /// Init effect settings
         void init_effect_details();
-        std::string protobuf_data_path;
+
+        Fraction BaseFPS;
+        double TimeScale;
 
     public:
-
-        std::map<int, EffectFrameData> trackedDataById; // Save object tracking box data
-
-        /// Blank constructor, useful when using Json to load the effect properties
-        Tracker(std::string clipTrackerDataPath);
+        std::string protobuf_data_path; ///< Path to the protobuf file that holds the bounding-box data
+        std::shared_ptr<TrackedObjectBBox> trackedData; ///< Pointer to an object that holds the bounding-box data and it's Keyframes
 
         /// Default constructor
         Tracker();
 
-        /// @brief This method is required for all derived classes of EffectBase, and returns a
-        /// modified openshot::Frame object
-        ///
-        /// The frame object is passed into this method, and a frame_number is passed in which
-        /// tells the effect which settings to use from its keyframes (starting at 1).
+        Tracker(std::string clipTrackerDataPath);
+
+        /// @brief Apply this effect to an openshot::Frame
         ///
         /// @returns The modified openshot::Frame object
         /// @param frame The frame object that needs the effect applied to it
         /// @param frame_number The frame number (starting at 1) of the effect on the timeline.
         std::shared_ptr<Frame> GetFrame(std::shared_ptr<Frame> frame, int64_t frame_number) override;
-        std::shared_ptr<openshot::Frame> GetFrame(int64_t frame_number) override { return GetFrame(std::shared_ptr<Frame> (new Frame()), frame_number); }
 
-        // Load protobuf data file
-        bool LoadTrackedData(std::string inputFilePath);
+        std::shared_ptr<openshot::Frame>
+        GetFrame(int64_t frame_number) override {
+            return GetFrame(std::shared_ptr<Frame>(new Frame()), frame_number);
+        }
 
-        // Get tracker info for the desired frame
-        EffectFrameData GetTrackedData(size_t frameId);
+        /// Get the indexes and IDs of all visible objects in the given frame
+        std::string GetVisibleObjects(int64_t frame_number) const override;
+
+        void DrawRectangleRGBA(cv::Mat &frame_image, cv::RotatedRect box, std::vector<int> color, float alpha, int thickness, bool is_background);
 
         // Get and Set JSON methods
-        std::string Json() const override; ///< Generate JSON string of this object
-        void SetJson(const std::string value) override; ///< Load JSON string into this object
-        Json::Value JsonValue() const override; ///< Generate Json::Value for this object
-        void SetJsonValue(const Json::Value root) override; ///< Load Json::Value into this object
 
-        /// Get all properties for a specific frame (perfect for a UI to display the current state
+        /// Generate JSON string of this object
+        std::string Json() const override;
+        /// Load JSON string into this object
+        void SetJson(const std::string value) override;
+        /// Generate Json::Value for this object
+        Json::Value JsonValue() const override;
+        /// Load Json::Value into this object
+        void SetJsonValue(const Json::Value root) override;
+
+        /// Get all properties for a specific frame
+        ///
+        /// (perfect for a UI to display the current state
         /// of all properties at any time)
         std::string PropertiesJSON(int64_t requested_frame) const override;
         };

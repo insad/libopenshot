@@ -2,31 +2,14 @@
  * @file
  * @brief Unit tests for CVStabilizer
  * @author Jonathan Thomas <jonathan@openshot.org>
+ * @author Brenno Caldato <brenno.caldato@outlook.com>
  *
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2020 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2020 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <sstream>
 #include <memory>
@@ -62,7 +45,7 @@ TEST_CASE( "Stabilize_Video", "[libopenshot][opencv][stabilizer]" )
     CVStabilization stabilizer(json_data, stabilizer_pc);
 
     // Stabilize clip for frames 0-21
-    stabilizer.stabilizeClip(c1, 0, 21, true);
+    stabilizer.stabilizeClip(c1, 1, 21, true);
 
     // Get stabilized data
     TransformParam tp = stabilizer.GetTransformParamData(20);
@@ -106,7 +89,7 @@ TEST_CASE( "SaveLoad_Protobuf", "[libopenshot][opencv][stabilizer]" )
     CVStabilization stabilizer_1(json_data, stabilizer_pc);
 
     // Stabilize clip for frames 0-20
-    stabilizer_1.stabilizeClip(c1, 0, 20+1, true);
+    stabilizer_1.stabilizeClip(c1, 1, 20+1, true);
 
     // Get stabilized data
     TransformParam tp_1 = stabilizer_1.GetTransformParamData(20);

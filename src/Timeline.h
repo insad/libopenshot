@@ -6,27 +6,9 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #ifndef OPENSHOT_TIMELINE_H
 #define OPENSHOT_TIMELINE_H
@@ -38,6 +20,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 #include <QtCore/QRegularExpression>
+
 #include "TimelineBase.h"
 #include "ReaderBase.h"
 
@@ -47,6 +30,11 @@
 #include "Fraction.h"
 #include "Frame.h"
 #include "KeyFrame.h"
+#ifdef USE_OPENCV
+#include "TrackedObjectBBox.h"
+#endif
+#include "TrackedObjectBase.h"
+
 
 
 namespace openshot {
@@ -102,10 +90,10 @@ namespace openshot {
 	 * The <b>following graphic</b> displays a timeline, and how clips can be arranged, scaled, and layered together. It
 	 * also demonstrates how the viewport can be scaled smaller than the canvas, which can be used to zoom and pan around the
 	 * canvas (i.e. pan & scan).
-	 * \image html /doc/images/Timeline_Layers.png
+	 * \image html Timeline_Layers.png
 	 *
 	 * The <b>following graphic</b> displays how the playhead determines which frames to combine and layer.
-	 * \image html /doc/images/Playhead.png
+	 * \image html Playhead.png
 	 *
 	 * Lets take a look at what the code looks like:
 	 * @code
@@ -174,8 +162,10 @@ namespace openshot {
 		std::mutex get_frame_mutex; ///< Mutex to protect GetFrame method from different threads calling it
 		int max_concurrent_frames; ///< Max concurrent frames to process at one time
 
+		std::map<std::string, std::shared_ptr<openshot::TrackedObjectBase>> tracked_objects; ///< map of TrackedObjectBBoxes and their IDs
+
 		/// Process a new layer of video or audio
-		void add_layer(std::shared_ptr<openshot::Frame> new_frame, openshot::Clip* source_clip, int64_t clip_frame_number, int64_t timeline_frame_number, bool is_top_clip, float max_volume);
+		void add_layer(std::shared_ptr<openshot::Frame> new_frame, openshot::Clip* source_clip, int64_t clip_frame_number, bool is_top_clip, float max_volume);
 
 		/// Apply a FrameMapper to a clip which matches the settings of this timeline
 		void apply_mapper_to_clip(openshot::Clip* clip);
@@ -198,10 +188,7 @@ namespace openshot {
 		std::vector<openshot::Clip*> find_intersecting_clips(int64_t requested_frame, int number_of_frames, bool include);
 
 		/// Get a clip's frame or generate a blank frame
-		std::shared_ptr<openshot::Frame> GetOrCreateFrame(std::shared_ptr<Frame> background_frame, openshot::Clip* clip, int64_t number);
-
-		/// Apply effects to the source frame (if any)
-		std::shared_ptr<openshot::Frame> apply_effects(std::shared_ptr<openshot::Frame> frame, int64_t timeline_frame_number, int layer);
+		std::shared_ptr<openshot::Frame> GetOrCreateFrame(std::shared_ptr<Frame> background_frame, openshot::Clip* clip, int64_t number, openshot::TimelineInfoStruct* options);
 
 		/// Compare 2 floating point numbers for equality
 		bool isEqual(double a, double b);
@@ -241,6 +228,17 @@ namespace openshot {
 
         virtual ~Timeline();
 
+		/// Add to the tracked_objects map a pointer to a tracked object (TrackedObjectBBox)
+		void AddTrackedObject(std::shared_ptr<openshot::TrackedObjectBase> trackedObject);
+		/// Return tracked object pointer by it's id
+		std::shared_ptr<openshot::TrackedObjectBase> GetTrackedObject(std::string id) const;
+		/// Return the ID's of the tracked objects as a list of strings
+		std::list<std::string> GetTrackedObjectsIds() const;
+		/// Return the trackedObject's properties as a JSON string
+        #ifdef USE_OPENCV
+		std::string GetTrackedObjectValues(std::string id, int64_t frame_number) const;
+        #endif
+
 		/// @brief Add an openshot::Clip to the timeline
 		/// @param clip Add an openshot::Clip to the timeline. A clip can contain any type of Reader.
 		void AddClip(openshot::Clip* clip);
@@ -248,6 +246,9 @@ namespace openshot {
 		/// @brief Add an effect to the timeline
 		/// @param effect Add an effect to the timeline. An effect can modify the audio or video of an openshot::Frame.
 		void AddEffect(openshot::EffectBase* effect);
+
+        /// Apply global/timeline effects to the source frame (if any)
+        std::shared_ptr<openshot::Frame> apply_effects(std::shared_ptr<openshot::Frame> frame, int64_t timeline_frame_number, int layer);
 
 		/// Apply the timeline's framerate and samplerate to all clips
 		void ApplyMapperToClips();
@@ -262,7 +263,7 @@ namespace openshot {
         void ClearAllCache();
 
 		/// Return a list of clips on the timeline
-		std::list<openshot::Clip*> Clips() { return clips; };
+		std::list<openshot::Clip*> Clips() override { return clips; };
 
 		/// Look up a single clip by ID
 		openshot::Clip* GetClip(const std::string& id);
@@ -283,6 +284,9 @@ namespace openshot {
 
 		/// Return the list of effects on the timeline
 		std::list<openshot::EffectBase*> Effects() { return effects; };
+
+		/// Return the list of effects on all clips
+		std::list<openshot::EffectBase*> ClipEffects() const;
 
 		/// Get the cache object used by this reader
 		openshot::CacheBase* GetCache() override { return final_cache; };

@@ -2,33 +2,23 @@
  * @file
  * @brief Source file for CVStabilization class
  * @author Jonathan Thomas <jonathan@openshot.org>
+ * @author Brenno Caldato <brenno.caldato@outlook.com>
  *
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 
 #include "CVStabilization.h"
+#include "Exceptions.h"
+
+#include "stabilizedata.pb.h"
 #include <google/protobuf/util/time_util.h>
 
 using namespace std;
@@ -39,8 +29,8 @@ using google::protobuf::util::TimeUtil;
 CVStabilization::CVStabilization(std::string processInfoJson, ProcessingController &processingController)
 : processingController(&processingController){
     SetJson(processInfoJson);
-    start = 0;
-    end = 0;
+    start = 1;
+    end = 1;
 }
 
 // Process clip and store necessary stabilization data
@@ -60,10 +50,10 @@ void CVStabilization::stabilizeClip(openshot::Clip& video, size_t _start, size_t
     cv::Size readerDims(video.Reader()->info.width, video.Reader()->info.height);
 
     size_t frame_number;
-    if(!process_interval || end == 0 || end-start == 0){
+    if(!process_interval || end <= 1 || end-start == 0){
         // Get total number of frames in video
-        start = video.Start() * video.Reader()->info.fps.ToInt();
-        end = video.End() * video.Reader()->info.fps.ToInt();
+        start = (int)(video.Start() * video.Reader()->info.fps.ToFloat()) + 1;
+        end = (int)(video.End() * video.Reader()->info.fps.ToFloat()) + 1;
     }
 
     // Extract and track opticalflow features for each frame
@@ -276,6 +266,8 @@ std::map<size_t,TransformParam> CVStabilization::GenNewCamPosition(std::map <siz
 
 // Save stabilization data to protobuf file
 bool CVStabilization::SaveStabilizedData(){
+    using std::ios;
+
     // Create stabilization message
     pb_stabilize::Stabilization stabilizationMessage;
 
@@ -292,7 +284,7 @@ bool CVStabilization::SaveStabilizedData(){
     // Write the new message to disk.
     std::fstream output(protobuf_data_path, ios::out | ios::trunc | ios::binary);
     if (!stabilizationMessage.SerializeToOstream(&output)) {
-        cerr << "Failed to write protobuf message." << endl;
+        std::cerr << "Failed to write protobuf message." << std::endl;
         return false;
     }
 
@@ -380,12 +372,13 @@ void CVStabilization::SetJsonValue(const Json::Value root) {
 
 // Load protobuf data file
 bool CVStabilization::_LoadStabilizedData(){
+    using std::ios;
     // Create stabilization message
     pb_stabilize::Stabilization stabilizationMessage;
     // Read the existing tracker message.
-    fstream input(protobuf_data_path, ios::in | ios::binary);
+    std::fstream input(protobuf_data_path, ios::in | ios::binary);
     if (!stabilizationMessage.ParseFromIstream(&input)) {
-        cerr << "Failed to parse protobuf message." << endl;
+        std::cerr << "Failed to parse protobuf message." << std::endl;
         return false;
     }
 

@@ -2,33 +2,23 @@
  * @file
  * @brief Source file for CVObjectDetection class
  * @author Jonathan Thomas <jonathan@openshot.org>
+ * @author Brenno Caldato <brenno.caldato@outlook.com>
  *
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 
 #include "CVObjectDetection.h"
+#include "Exceptions.h"
+
+#include "objdetectdata.pb.h"
 #include <google/protobuf/util/time_util.h>
 
 using namespace std;
@@ -78,10 +68,10 @@ void CVObjectDetection::detectObjectsClip(openshot::Clip &video, size_t _start, 
     setProcessingDevice();
 
     size_t frame_number;
-    if(!process_interval || end == 0 || end-start == 0){
+    if(!process_interval || end <= 1 || end-start == 0){
         // Get total number of frames in video
-        start = video.Start() * video.Reader()->info.fps.ToInt();
-        end = video.End() * video.Reader()->info.fps.ToInt();
+        start = (int)(video.Start() * video.Reader()->info.fps.ToFloat());
+        end = (int)(video.End() * video.Reader()->info.fps.ToFloat());
     }
 
     for (frame_number = start; frame_number <= end; frame_number++)
@@ -101,7 +91,6 @@ void CVObjectDetection::detectObjectsClip(openshot::Clip &video, size_t _start, 
         // Update progress
         processingController->SetProgress(uint(100*(frame_number-start)/(end-start)));
 
-        // std::cout<<"Frame: "<<frame_number<<"\n";
     }
 }
 
@@ -134,6 +123,7 @@ void CVObjectDetection::postprocess(const cv::Size &frameDims, const std::vector
     std::vector<int> classIds;
     std::vector<float> confidences;
     std::vector<cv::Rect> boxes;
+    std::vector<int> objectIds;
 
     for (size_t i = 0; i < outs.size(); ++i)
     {
@@ -176,13 +166,14 @@ void CVObjectDetection::postprocess(const cv::Size &frameDims, const std::vector
     sort.update(sortBoxes, frameId, sqrt(pow(frameDims.width,2) + pow(frameDims.height, 2)), confidences, classIds);
 
     // Clear data vectors
-    boxes.clear(); confidences.clear(); classIds.clear();
+    boxes.clear(); confidences.clear(); classIds.clear(); objectIds.clear();
     // Get SORT predicted boxes
     for(auto TBox : sort.frameTrackingResult){
         if(TBox.frame == frameId){
             boxes.push_back(TBox.box);
             confidences.push_back(TBox.confidence);
             classIds.push_back(TBox.classId);
+            objectIds.push_back(TBox.id);
         }
     }
 
@@ -198,12 +189,14 @@ void CVObjectDetection::postprocess(const cv::Size &frameDims, const std::vector
                         boxes.erase(boxes.begin() + j);
                         classIds.erase(classIds.begin() + j);
                         confidences.erase(confidences.begin() + j);
+                        objectIds.erase(objectIds.begin() + j);
                         break;
                     }
                     else{
                         boxes.erase(boxes.begin() + i);
                         classIds.erase(classIds.begin() + i);
                         confidences.erase(confidences.begin() + i);
+                        objectIds.erase(objectIds.begin() + i);
                         i = 0;
                         break;
                     }
@@ -222,12 +215,14 @@ void CVObjectDetection::postprocess(const cv::Size &frameDims, const std::vector
                         boxes.erase(boxes.begin() + j);
                         classIds.erase(classIds.begin() + j);
                         confidences.erase(confidences.begin() + j);
+                        objectIds.erase(objectIds.begin() + j);
                         break;
                     }
                     else{
                         boxes.erase(boxes.begin() + i);
                         classIds.erase(classIds.begin() + i);
                         confidences.erase(confidences.begin() + i);
+                        objectIds.erase(objectIds.begin() + i);
                         i = 0;
                         break;
                     }
@@ -247,7 +242,7 @@ void CVObjectDetection::postprocess(const cv::Size &frameDims, const std::vector
         normalized_boxes.push_back(normalized_box);
     }
 
-    detectionsData[frameId] = CVDetectionData(classIds, confidences, normalized_boxes, frameId);
+    detectionsData[frameId] = CVDetectionData(classIds, confidences, normalized_boxes, frameId, objectIds);
 }
 
 // Compute IOU between 2 boxes
@@ -355,6 +350,7 @@ void CVObjectDetection::AddFrameDataToProto(pb_objdetect::Frame* pbFrameData, CV
         box->set_h(dData.boxes.at(i).height);
         box->set_classid(dData.classIds.at(i));
         box->set_confidence(dData.confidences.at(i));
+        box->set_objectid(dData.objectIds.at(i));
 
     }
 }
@@ -457,7 +453,10 @@ bool CVObjectDetection::_LoadObjDetectdData(){
         const google::protobuf::RepeatedPtrField<pb_objdetect::Frame_Box > &pBox = pbFrameData.bounding_box();
 
         // Construct data vectors related to detections in the current frame
-        std::vector<int> classIds; std::vector<float> confidences; std::vector<cv::Rect_<float>> boxes;
+        std::vector<int> classIds;
+        std::vector<float> confidences;
+        std::vector<cv::Rect_<float>> boxes;
+        std::vector<int> objectIds;
 
         for(int i = 0; i < pbFrameData.bounding_box_size(); i++){
             // Get bounding box coordinates
@@ -468,13 +467,15 @@ bool CVObjectDetection::_LoadObjDetectdData(){
 
             // Get class Id (which will be assign to a class name) and prediction confidence
             int classId = pBox.Get(i).classid(); float confidence = pBox.Get(i).confidence();
+            // Get object Id
+            int objectId = pBox.Get(i).objectid();
 
             // Push back data into vectors
             boxes.push_back(box); classIds.push_back(classId); confidences.push_back(confidence);
         }
 
         // Assign data to object detector map
-        detectionsData[id] = CVDetectionData(classIds, confidences, boxes, id);
+        detectionsData[id] = CVDetectionData(classIds, confidences, boxes, id, objectIds);
     }
 
     // Delete all global objects allocated by libprotobuf.

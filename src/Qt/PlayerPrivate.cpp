@@ -7,30 +7,13 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "PlayerPrivate.h"
 #include "Exceptions.h"
+#include "ZmqLogger.h"
 
 #include <thread>    // for std::this_thread::sleep_for
 #include <chrono>    // for std::chrono milliseconds, high_resolution_clock
@@ -43,13 +26,13 @@ namespace openshot
     , audioPlayback(new openshot::AudioPlaybackThread())
     , videoPlayback(new openshot::VideoPlaybackThread(rb))
     , videoCache(new openshot::VideoCacheThread())
-    , speed(1), reader(NULL), last_video_position(1)
+    , speed(1), reader(NULL), last_video_position(1), max_sleep_ms(125000)
     { }
 
     // Destructor
     PlayerPrivate::~PlayerPrivate()
     {
-        stopPlayback(1000);
+        stopPlayback();
         delete audioPlayback;
         delete videoCache;
         delete videoPlayback;
@@ -73,13 +56,13 @@ namespace openshot
         using std::chrono::duration_cast;
 
         // Types for storing time durations in whole and fractional milliseconds
-        using ms = std::chrono::milliseconds;
-        using double_ms = std::chrono::duration<double, ms::period>;
-
-        // Calculate on-screen time for a single frame in milliseconds
-        const auto frame_duration = double_ms(1000.0 / reader->info.fps.ToDouble());
+        using micro_sec = std::chrono::microseconds;
+        using double_micro_sec = std::chrono::duration<double, micro_sec::period>;
 
         while (!threadShouldExit()) {
+            // Calculate on-screen time for a single frame in milliseconds
+            const auto frame_duration = double_micro_sec(1000000.0 / reader->info.fps.ToDouble());
+
             // Get the start time (to track how long a frame takes to render)
             const auto time1 = std::chrono::high_resolution_clock::now();
 
@@ -118,16 +101,16 @@ namespace openshot
             const auto time2 = std::chrono::high_resolution_clock::now();
 
             // Determine how many milliseconds it took to render the frame
-            const auto render_time = double_ms(time2 - time1);
+            const auto render_time = double_micro_sec(time2 - time1);
 
             // Calculate the amount of time to sleep (by subtracting the render time)
-            auto sleep_time = duration_cast<ms>(frame_duration - render_time);
+            auto sleep_time = duration_cast<micro_sec>(frame_duration - render_time);
 
             // Debug
             ZmqLogger::Instance()->AppendDebugMethod("PlayerPrivate::run (determine sleep)", "video_frame_diff", video_frame_diff, "video_position", video_position, "audio_position", audio_position, "speed", speed, "render_time(ms)", render_time.count(), "sleep_time(ms)", sleep_time.count());
 
             // Adjust drift (if more than a few frames off between audio and video)
-            if (video_frame_diff > 0 && reader->info.has_audio && reader->info.has_video) {
+            if (video_frame_diff > 6 && reader->info.has_audio && reader->info.has_video) {
                 // Since the audio and video threads are running independently,
                 // they will quickly get out of sync. To fix this, we calculate
                 // how far ahead or behind the video frame is, and adjust the amount
@@ -135,17 +118,28 @@ namespace openshot
                 // If a frame is ahead of the audio, we sleep for longer.
                 // If a frame is behind the audio, we sleep less (or not at all),
                 // in order for the video to catch up.
-                sleep_time += duration_cast<ms>(video_frame_diff * frame_duration);
+                sleep_time += duration_cast<micro_sec>((video_frame_diff / 2) * frame_duration);
             }
-
-            else if (video_frame_diff < -10 && reader->info.has_audio && reader->info.has_video) {
-                // Skip frame(s) to catch up to the audio (if more than 10 frames behind)
-                video_position += std::fabs(video_frame_diff) / 2; // Seek forward 1/2 the difference
+            else if (video_frame_diff < -3 && reader->info.has_audio && reader->info.has_video) {
+                // Video frames are a bit behind, sleep less, we need to display frames more quickly
+                sleep_time = duration_cast<micro_sec>(sleep_time * 0.75); // Sleep a little less
+            }
+            else if (video_frame_diff < -9 && reader->info.has_audio && reader->info.has_video) {
+                // Video frames are very behind, no sleep, we need to display frames more quickly
+                sleep_time = sleep_time.zero(); // Don't sleep now... immediately go to next position
+            }
+            else if (video_frame_diff < -12 && reader->info.has_audio && reader->info.has_video) {
+                // Video frames are very behind, jump forward the entire distance (catch up with the audio position)
+                // Skip frame(s) to catch up to the audio
+                video_position += std::fabs(video_frame_diff);
                 sleep_time = sleep_time.zero(); // Don't sleep now... immediately go to next position
             }
 
             // Sleep (leaving the video frame on the screen for the correct amount of time)
-            if (sleep_time > sleep_time.zero()) {
+            // Don't sleep too long though (in some extreme cases, for example when stopping threads
+            // and shutting down, the video_frame_diff can jump to a crazy big number, and we don't
+            // want to sleep too long (max of X seconds)
+            if (sleep_time > sleep_time.zero() && sleep_time.count() < max_sleep_ms) {
                 std::this_thread::sleep_for(sleep_time);
             }
 
@@ -186,18 +180,18 @@ namespace openshot
     {
         if (video_position < 0) return false;
 
-        stopPlayback(-1);
+        stopPlayback();
         startThread(1);
         return true;
     }
 
     // Stop video/audio playback
-    void PlayerPrivate::stopPlayback(int timeOutMilliseconds)
+    void PlayerPrivate::stopPlayback()
     {
-        if (audioPlayback->isThreadRunning() && reader->info.has_audio) audioPlayback->stopThread(timeOutMilliseconds);
-        if (videoCache->isThreadRunning() && reader->info.has_video) videoCache->stopThread(timeOutMilliseconds);
-        if (videoPlayback->isThreadRunning() && reader->info.has_video) videoPlayback->stopThread(timeOutMilliseconds);
-        if (isThreadRunning()) stopThread(timeOutMilliseconds);
+        if (audioPlayback->isThreadRunning() && reader->info.has_audio) audioPlayback->stopThread(max_sleep_ms);
+        if (videoCache->isThreadRunning() && reader->info.has_video) videoCache->stopThread(max_sleep_ms);
+        if (videoPlayback->isThreadRunning() && reader->info.has_video) videoPlayback->stopThread(max_sleep_ms);
+        if (isThreadRunning()) stopThread(max_sleep_ms);
     }
 
 }

@@ -6,27 +6,9 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #ifndef OPENSHOT_CLIP_H
 #define OPENSHOT_CLIP_H
@@ -43,22 +25,23 @@
 
 #include <memory>
 #include <string>
-#include <QtGui/QImage>
-#include "AudioResampler.h"
+
 #include "ClipBase.h"
+#include "ReaderBase.h"
+
 #include "Color.h"
 #include "Enums.h"
 #include "EffectBase.h"
-#include "Effects.h"
 #include "EffectInfo.h"
-#include "Frame.h"
 #include "KeyFrame.h"
-#include "ReaderBase.h"
-#include <OpenShotAudio.h>
+#include "TrackedObjectBase.h"
 
+#include <QImage>
 
 namespace openshot {
+	class AudioResampler;
 	class EffectInfo;
+	class Frame;
 
 	/// Comparison method for sorting effect pointers (by Position, Layer, and Order). Effects are sorted
 	/// from lowest layer to top layer (since that is sequence clips are combined), and then by
@@ -106,8 +89,8 @@ namespace openshot {
 	 */
 	class Clip : public openshot::ClipBase, public openshot::ReaderBase {
 	protected:
-		/// Section lock for multiple threads
-	    juce::CriticalSection getFrameCriticalSection;
+		/// Mutex for multiple threads
+	    std::recursive_mutex getFrameMutex;
 
 		/// Init default settings for a clip
 		void init_settings();
@@ -122,6 +105,10 @@ namespace openshot {
 		bool waveform; ///< Should a waveform be used instead of the clip's image
 		std::list<openshot::EffectBase*> effects; ///< List of clips on this timeline
 		bool is_open;	///< Is Reader opened
+		std::string parentObjectId; ///< Id of the bounding box that this clip is attached to
+		std::shared_ptr<openshot::TrackedObjectBase> parentTrackedObject; ///< Tracked object this clip is attached to
+		openshot::Clip* parentClipObject; ///< Clip object this clip is attached to
+
 
 		// Audio resampler (if time mapping)
 		openshot::AudioResampler *resampler;
@@ -161,8 +148,7 @@ namespace openshot {
 		void sort_effects();
 
 		/// Reverse an audio buffer
-		void reverse_buffer(juce::AudioSampleBuffer* buffer);
-
+		void reverse_buffer(juce::AudioBuffer<float>* buffer);
 
 
 	public:
@@ -198,6 +184,23 @@ namespace openshot {
 		/// Determine if reader is open or closed
 		bool IsOpen() override { return is_open; };
 
+		/// Get and set the object id that this clip is attached to
+		std::string GetAttachedId() const { return parentObjectId; };
+		/// Set id of the object id that this clip is attached to
+		void SetAttachedId(std::string value) { parentObjectId = value; };
+
+		/// Attach clip to Tracked Object or to another Clip
+		void AttachToObject(std::string object_id);
+
+		/// Set the pointer to the trackedObject this clip is attached to
+		void SetAttachedObject(std::shared_ptr<openshot::TrackedObjectBase> trackedObject);
+		/// Set the pointer to the clip this clip is attached to
+		void SetAttachedClip(Clip* clipObject);
+		/// Return a pointer to the trackedObject this clip is attached to
+		std::shared_ptr<openshot::TrackedObjectBase> GetAttachedObject() const { return parentTrackedObject; };
+		/// Return a pointer to the clip this clip is attached to
+		Clip* GetAttachedClip() const { return parentClipObject; };
+
 		/// Return the type name of the class
 		std::string Name() override { return "Clip"; };
 
@@ -214,24 +217,38 @@ namespace openshot {
 		/// Look up an effect by ID
 		openshot::EffectBase* GetEffect(const std::string& id);
 
-		/// @brief Get an openshot::Frame object for a specific frame number of this timeline. The image size and number
-		/// of samples match the source reader.
-		///
-		/// @returns A new openshot::Frame object
-		/// @param frame_number The frame number (starting at 1) of the clip or effect on the timeline.
-		std::shared_ptr<openshot::Frame> GetFrame(int64_t frame_number) override;
+        /// @brief Get an openshot::Frame object for a specific frame number of this clip. The image size and number
+        /// of samples match the source reader.
+        ///
+        /// @returns A new openshot::Frame object
+        /// @param frame_number The frame number (starting at 1) of the clip
+        std::shared_ptr<openshot::Frame> GetFrame(int64_t frame_number) override;
 
-		/// @brief Get an openshot::Frame object for a specific frame number of this timeline. The image size and number
-		/// of samples can be customized to match the Timeline, or any custom output. Extra samples will be moved to the
-		/// next Frame. Missing samples will be moved from the next Frame.
-		///
-		/// A new openshot::Frame objects is returned, based on a copy from the source image, with all keyframes and clip effects
-		/// rendered.
-		///
-		/// @returns The modified openshot::Frame object
-		/// @param background_frame The frame object to use as a background canvas (i.e. an existing Timeline openshot::Frame instance)
-		/// @param frame_number The frame number (starting at 1) of the clip or effect on the timeline.
-		std::shared_ptr<openshot::Frame> GetFrame(std::shared_ptr<openshot::Frame> background_frame, int64_t frame_number);
+        /// @brief Get an openshot::Frame object for a specific frame number of this clip. The image size and number
+        /// of samples match the background_frame passed in and the timeline (if available).
+        ///
+        /// A new openshot::Frame objects is returned, based on a copy from the source image, with all keyframes and clip effects
+        /// rendered/rasterized.
+        ///
+        /// @returns The modified openshot::Frame object
+        /// @param background_frame The frame object to use as a background canvas (i.e. an existing Timeline openshot::Frame instance)
+        /// @param frame_number The frame number (starting at 1) of the clip. The image size and number
+        /// of samples match the background_frame passed in and the timeline (if available)
+        std::shared_ptr<openshot::Frame> GetFrame(std::shared_ptr<openshot::Frame> background_frame, int64_t frame_number) override;
+
+        /// @brief Get an openshot::Frame object for a specific frame number of this clip. The image size and number
+        /// of samples match the background_frame passed in and the timeline (if available).
+        ///
+        /// A new openshot::Frame objects is returned, based on a copy from the source image, with all keyframes and clip effects
+        /// rendered/rasterized.
+        ///
+        /// @returns The modified openshot::Frame object
+        /// @param background_frame The frame object to use as a background canvas (i.e. an existing Timeline openshot::Frame instance)
+        /// @param frame_number The frame number (starting at 1) of the clip on the timeline. The image size and number
+        /// of samples match the timeline.
+        /// @param options The openshot::TimelineInfoStruct pointer, with more details about this specific timeline clip,
+        /// such as, if it's a top clip. This info is used to apply global transitions and masks, if needed.
+        std::shared_ptr<openshot::Frame> GetFrame(std::shared_ptr<openshot::Frame> background_frame, int64_t frame_number, openshot::TimelineInfoStruct* options);
 
 		/// Open the internal reader
 		void Open() override;

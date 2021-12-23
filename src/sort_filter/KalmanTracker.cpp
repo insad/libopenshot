@@ -1,3 +1,7 @@
+// © OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 ///////////////////////////////////////////////////////////////////////////////
 // KalmanTracker.cpp: KalmanTracker Class Implementation Declaration
 
@@ -6,8 +10,6 @@
 
 using namespace std;
 using namespace cv;
-
-int KalmanTracker::kf_count = 0;
 
 // initialize Kalman filter
 void KalmanTracker::init_kf(

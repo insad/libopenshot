@@ -6,32 +6,14 @@
  * @ref License
  */
 
-/* LICENSE
- *
- * Copyright (c) 2008-2019 OpenShot Studios, LLC
- * <http://www.openshotstudios.com/>. This file is part of
- * OpenShot Library (libopenshot), an open-source project dedicated to
- * delivering high quality video editing and animation solutions to the
- * world. For more information visit <http://www.openshot.org/>.
- *
- * OpenShot Library (libopenshot) is free software: you can redistribute it
- * and/or modify it under the terms of the GNU Lesser General Public License
- * as published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * OpenShot Library (libopenshot) is distributed in the hope that it will be
- * useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with OpenShot Library. If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2008-2019 OpenShot Studios, LLC
+//
+// SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "EffectInfo.h"
+#include "Effects.h"
 
 using namespace openshot;
-
 
 // Generate JSON string of this object
 std::string EffectInfo::Json() {
@@ -88,13 +70,40 @@ EffectBase* EffectInfo::CreateEffect(std::string effect_type) {
 	else if (effect_type == "Wave")
 		return new Wave();
 
+	else if(effect_type == "Noise")
+		return new Noise();
+
+	else if(effect_type == "Delay")
+		return new Delay();
+
+	else if(effect_type == "Echo")
+		return new Echo();
+
+	else if(effect_type == "Distortion")
+		return new Distortion();
+
+	else if(effect_type == "ParametricEQ")
+		return new ParametricEQ();
+
+	else if(effect_type == "Compressor")
+		return new Compressor();
+
+	else if(effect_type == "Expander")
+		return new Expander();
+
+	else if(effect_type == "Robotization")
+		return new Robotization();
+
+	else if(effect_type == "Whisperization")
+		return new Whisperization();
+
 	#ifdef USE_OPENCV
 	else if(effect_type == "Stabilizer")
 		return new Stabilizer();
 
 	else if(effect_type == "Tracker")
 		return new Tracker();
-		
+
 	else if(effect_type == "Object Detector")
 		return new ObjectDetection();
 	#endif
@@ -124,6 +133,16 @@ Json::Value EffectInfo::JsonValue() {
 	root.append(Saturation().JsonInfo());
 	root.append(Shift().JsonInfo());
 	root.append(Wave().JsonInfo());
+	/* Audio */
+	root.append(Noise().JsonInfo());
+	root.append(Delay().JsonInfo());
+	root.append(Echo().JsonInfo());
+	root.append(Distortion().JsonInfo());
+	root.append(ParametricEQ().JsonInfo());
+	root.append(Compressor().JsonInfo());
+	root.append(Expander().JsonInfo());
+	root.append(Robotization().JsonInfo());
+	root.append(Whisperization().JsonInfo());
 
 	#ifdef USE_OPENCV
 	root.append(Stabilizer().JsonInfo());
